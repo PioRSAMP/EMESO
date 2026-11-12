@@ -323,7 +323,7 @@ async function simpanAnalisis(id, text, sumber) {
 }
 async function gemini(id) {
   toast('Menganalisis dengan Gemini…');
-  const { data, error } = await sb.functions.invoke('analisis-meso', { body: { prompt: buatPrompt(cari(id)) } });
+  const { data, error } = await sb.functions.invoke('quick-action', { body: { prompt: buatPrompt(cari(id)) } });
   if (error || !data || data.error) { toast('Gagal: ' + (error ? error.message : data && data.error)); return; }
   await simpanAnalisis(id, data.text, 'gemini');
 }
