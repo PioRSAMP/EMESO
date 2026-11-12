@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>MESO – RSUD A.M. Parikesit</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 :root{--ink:#1d2433;--mut:#5b6577;--line:#d9dee7;--bg:#f3f6f5;--card:#fff;--acc:#0b6b5c;--tint:#e3f2ef;--err:#b3261e}
 *{box-sizing:border-box}[hidden]{display:none!important}
@@ -125,14 +126,16 @@ details{margin-top:6px}summary{cursor:pointer;color:var(--acc);font-weight:600}
 </div>
 
 <div id="viewList" hidden>
+  <div class="btns"><button class="alt" id="btnXlsL">Ekspor rekap ke Excel (semua tahun)</button></div>
   <p class="hint">Opsi 1: Gemini otomatis. Opsi 2: salin prompt, tempel ke claude.ai, lalu tempel hasilnya kembali. Hasil AI adalah draf: periksa sebelum dicetak dan ditandatangani, terutama bagian referensi literatur.</p>
   <div id="daftar"></div>
 </div>
 
 <div id="viewArsip" hidden>
-  <p class="hint">Rekap lama hasil migrasi dari Google Sheets (2022–2026). Hanya untuk dilihat; analisis AI hanya untuk laporan baru karena data lama tidak punya skor Naranjo.</p>
+  <p class="hint">Rekap lama hasil migrasi dari Google Sheets (2022–2026). Bisa diekspor ke Excel; analisis AI hanya untuk laporan baru karena data lama tidak punya skor Naranjo.</p>
   <div class="r2"><label>Tahun<select id="fTahun"></select></label><label>Cari<input id="fCari" placeholder="nama, obat, manifestasi, ruangan"></label></div>
   <p id="arsipInfo" class="mut" style="margin-top:8px"></p>
+  <div class="btns"><button class="alt" id="btnXlsA">Ekspor rekap ke Excel</button></div>
   <div id="arsipList"></div>
 </div>
 </main>
@@ -142,8 +145,8 @@ details{margin-top:6px}summary{cursor:pointer;color:var(--acc);font-weight:600}
 
 <script>
 // ====== PENGATURAN (isi sebelum dipakai) ======
-const SUPABASE_URL = 'sb_publishable_wp7QCDRQqPR9IMBoQ7peog_xpPjr0dH';
-const SUPABASE_KEY = 'GANTI_DENGAN_ANON_PUBLIC_KEY';
+const SUPABASE_URL = 'https://mcofdupvjcejburgveef.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_wp7QCDRQqPR9IMBoQ7peog_xpPjr0dH';
 const KETUA_PFT = 'dr. Anton Komala, Sp. PD';
 const RUANGAN = ['Poli Rawat Jalan','Rawat Jalan','Rawat Inap','IGD','IBS','ICU','PICU','NICU','Maternitas','Punai 1','Punai 2','Punai 3','Poliklinik Urologi'];
 // =============================================
@@ -364,6 +367,56 @@ function cetak(id) {
   <div class="ttd">Ketua Panitia Farmasi dan Terapi<br><br><br><br><b>${esc(KETUA_PFT)}</b></div></body></html>`);
   w.document.close(); setTimeout(() => w.print(), 400);
 }
+
+// ====== Ekspor rekap ke Excel (format mirip Google Sheets lama) ======
+const MLBL = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+const urutKunci = k => { const m = String(k).match(/^\d{4}\|(\d+)$/); return m ? +m[1] : 0; };
+async function ambilSemua(tabel) {
+  const all = [];
+  for (let i = 0; ; i += 1000) {
+    const { data, error } = await sb.from(tabel).select('*').range(i, i + 999);
+    if (error) throw error;
+    all.push(...data); if (data.length < 1000) break;
+  }
+  return all;
+}
+function dariArsip(r) {
+  return { tahun: r.tahun, nama: r.nama, jk: r.jenis_kelamin, usia: r.usia, ruangan: r.ruangan, bt: r.bulan_tahun, obat: r.obat, pabrik: r.pabrik,
+    mani: r.manifestasi, farm: r.tindak_lanjut_farmasi, med: r.tindak_lanjut_medis, pel: r.pelapor || '', tgl: r.tanggal_kejadian || '' };
+}
+function dariLaporan(r) {
+  const [y, m] = r.tanggal_laporan.split('-');
+  return { tahun: +y, nama: r.nama_pasien, jk: r.jenis_kelamin, usia: r.usia + (r.berat_badan ? ', BB ' + r.berat_badan : ''), ruangan: r.ruangan,
+    bt: MLBL[+m] + '-' + y.slice(2), obat: r.obat.map(o => [o.nama, o.dosis].filter(Boolean).join(' ')).join('; '),
+    pabrik: [...new Set(r.obat.map(o => o.industri).filter(Boolean))].join('; '),
+    mani: r.deskripsi_eso + (r.onset ? ' (Onset: ' + r.onset + ')' : ''), farm: 'Assesmen dan pelaporan ESO', med: r.penanganan || '-',
+    pel: r.pelapor, tgl: tgl(r.tanggal_mulai_eso) };
+}
+async function eksporExcel(thn) {
+  try {
+    toast('Menyiapkan file Excel…');
+    const [a, b] = await Promise.all([ambilSemua('laporan_arsip'), ambilSemua('laporan')]);
+    a.sort((x, y) => urutKunci(x.kunci) - urutKunci(y.kunci));       // urutan asli sheet lama
+    b.sort((x, y) => (x.created_at < y.created_at ? -1 : 1));        // laporan baru menyusul di bawahnya
+    let rows = [...a.map(dariArsip), ...b.map(dariLaporan)];
+    if (thn) rows = rows.filter(r => String(r.tahun) === String(thn));
+    if (!rows.length) { toast('Tidak ada data untuk diekspor.'); return; }
+    const HEAD = ['Nama/ Inisial', 'Jenis Kelamin', 'Tanggal Lahir (Usia)', 'Ruangan', 'Bulan & Tahun', 'Nama, dosis, rute obat (Terdeteksi)', 'Pabrik Pembuat',
+      'Manifestasi', 'Tindak Lanjut Farmasi', 'Tindak Lanjut Medis', 'Nama Pelapor', 'Tanggal Kejadian'];
+    const wb = XLSX.utils.book_new();
+    [...new Set(rows.map(r => r.tahun))].sort().forEach(y => {
+      const aoa = [['REKAPAN MESO TAHUN ' + y], HEAD, ...rows.filter(r => r.tahun === y).map(r => [r.nama, r.jk, r.usia, r.ruangan, r.bt, r.obat, r.pabrik, r.mani, r.farm, r.med, r.pel, r.tgl])];
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 11 } }];
+      ws['!cols'] = [10, 8, 14, 20, 11, 34, 22, 40, 24, 34, 30, 18].map(w => ({ wch: w }));
+      XLSX.utils.book_append_sheet(wb, ws, 'TAHUN ' + y);
+    });
+    XLSX.writeFile(wb, 'Rekapan_MESO' + (thn ? '_' + thn : '') + '.xlsx');
+    toast('File Excel diunduh.');
+  } catch (e) { toast('Gagal ekspor: ' + (e.message || e)); }
+}
+$('btnXlsA').onclick = () => eksporExcel($('fTahun').value);
+$('btnXlsL').onclick = () => eksporExcel('');
 
 // ====== Navigasi & login ======
 let ARSIP = [];
