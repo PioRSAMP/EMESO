@@ -3,7 +3,7 @@
 // Deploy dengan pengaturan default (verify JWT aktif) -> hanya pengguna login yang bisa memanggil.
 const cors = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, x-supabase-api-version, apikey, content-type',
 };
 const json = (o: unknown) =>
   new Response(JSON.stringify(o), { headers: { ...cors, 'Content-Type': 'application/json' } });
