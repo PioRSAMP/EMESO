@@ -39,6 +39,16 @@ details{margin-top:6px}summary{cursor:pointer;color:var(--acc);font-weight:600}
 #toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#1d2433;color:#fff;padding:10px 16px;border-radius:8px;max-width:90%;z-index:9}
 .err{color:var(--err)}
 .tw{overflow-x:auto}.tb{border-collapse:collapse;width:100%;font-size:12.5px;background:#fff}.tb th,.tb td{border:1px solid var(--line);padding:4px 7px;text-align:left;vertical-align:top}.tb th{background:var(--tint);position:sticky;top:0}
+#modalA{position:fixed;inset:0;background:#000a;z-index:8;display:flex;justify-content:center;padding:12px}
+.mbox{background:var(--card);border-radius:10px;max-width:760px;width:100%;margin:auto;display:flex;flex-direction:column;max-height:calc(100vh - 24px)}
+.mhead{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line)}
+.mhead h2{margin:0}
+#mBody{padding:12px 14px;overflow-y:auto}
+.mfoot{padding:10px 14px;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:6px}
+.sec{margin-bottom:14px}.sec h3{color:var(--acc);margin-bottom:4px}.sec p{margin:0;white-space:pre-wrap;line-height:1.6}
+.sec ol{margin:0;padding-left:20px}
+.sum{background:var(--tint);border-radius:6px;padding:8px 10px;margin-bottom:12px;font-size:13px}.sum div{margin:2px 0}
+.warn{background:#fff6e0;border:1px solid #f0d9a0;border-radius:6px;padding:8px 10px;font-size:12.5px;margin-bottom:12px}
 </style>
 </head>
 <body>
@@ -140,6 +150,14 @@ details{margin-top:6px}summary{cursor:pointer;color:var(--acc);font-weight:600}
 </div>
 </main>
 </section>
+
+<div id="modalA" hidden>
+  <div class="mbox" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+    <div class="mhead"><h2 id="mTitle">Hasil analisis</h2><button class="alt" onclick="tutupAnalisis()">Tutup ✕</button></div>
+    <div id="mBody"></div>
+    <div class="mfoot" id="mFoot"></div>
+  </div>
+</div>
 
 <div id="toast" hidden></div>
 
@@ -297,7 +315,7 @@ function kartu(r) {
     <button onclick="gemini('${r.id}')">Analisis dengan Gemini</button>
     <button class="alt" onclick="salinPrompt('${r.id}')">Salin prompt untuk Claude</button>
     <button class="alt" onclick="salinEmeso('${r.id}')">Salin data e-MESO</button>
-    ${r.analisis ? `<button class="alt" onclick="cetak('${r.id}')">Cetak / PDF</button>` : ''}
+    ${r.analisis ? `<button onclick="bukaAnalisis('${r.id}')">Lihat hasil analisis</button>` : ''}
   </div>
   <details><summary>Tempel hasil dari Claude / koreksi analisis</summary>
     <textarea id="t${r.id}" rows="9" placeholder="Tempel balasan JSON dari Claude di sini">${esc(r.analisis ? JSON.stringify(r.analisis, null, 2) : '')}</textarea>
@@ -319,7 +337,7 @@ function parseAnalisis(t) {
 async function simpanAnalisis(id, text, sumber) {
   const { error } = await sb.from('laporan').update({ analisis: parseAnalisis(text), analisis_sumber: sumber, analisis_at: new Date().toISOString() }).eq('id', id);
   if (error) { toast('Gagal menyimpan: ' + error.message); return; }
-  toast('Analisis tersimpan. Periksa, lalu klik Cetak / PDF.'); await muat();
+  toast('Analisis tersimpan. Silakan baca dan periksa di panel.'); await muat(); bukaAnalisis(id);
 }
 async function gemini(id) {
   toast('Menganalisis dengan Gemini…');
@@ -341,13 +359,60 @@ function salinEmeso(id) {
   salin(t, 'Data e-MESO tersalin. Isi ke e-meso.pom.go.id sesuai urutan.');
 }
 
+// ====== Panel baca hasil analisis (baca & koreksi sebelum cetak) ======
+const BAGIAN = [['kronologi', 'Kronologi kejadian'], ['analisa', 'Analisa kejadian efek samping obat'], ['rekomendasi_pft', 'Rekomendasi PFT'], ['kesimpulan', 'Kesimpulan']];
+const teks = x => Array.isArray(x) ? x.map(teks).join('\n') : (x && typeof x === 'object') ? JSON.stringify(x, null, 2) : String(x ?? '');
+let PANEL = { id: null, edit: false };
+function bukaAnalisis(id) {
+  const r = cari(id);
+  if (!r || !r.analisis) { toast('Belum ada analisis untuk laporan ini.'); return; }
+  PANEL = { id, edit: false };
+  gambarPanel();
+  $('modalA').hidden = false; document.body.style.overflow = 'hidden'; $('mBody').scrollTop = 0;
+}
+function tutupAnalisis() { $('modalA').hidden = true; document.body.style.overflow = ''; }
+function editPanel(on) { PANEL.edit = on; gambarPanel(); $('mBody').scrollTop = 0; }
+function gambarPanel() {
+  const r = cari(PANEL.id), a = r.analisis || {}, e = PANEL.edit;
+  const sumber = { gemini: 'Gemini (AI)', 'claude-manual': 'Claude (ditempel manual)' }[r.analisis_sumber] || r.analisis_sumber || '-';
+  const waktu = r.analisis_at ? new Date(r.analisis_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : '-';
+  $('mTitle').textContent = (e ? 'Koreksi analisis – ' : 'Hasil analisis – ') + r.nama_pasien;
+  const ringkas = `<div class="sum">
+    <div><b>Pasien:</b> ${esc(r.nama_pasien)} · ${esc(r.usia)} · ${r.jenis_kelamin === 'L' ? 'Pria' : 'Wanita'}</div>
+    <div><b>Obat dicurigai:</b> ${esc(r.obat.map(o => o.nama).join(', '))}</div>
+    <div><b>Manifestasi ESO:</b> ${esc(r.deskripsi_eso)}</div>
+    <div><b>Naranjo:</b> ${esc(r.naranjo_skor)} (${esc(r.naranjo_kategori)}) · <b>Keseriusan:</b> ${esc(r.keseriusan)} · <b>Kesudahan:</b> ${esc(r.kesudahan)}</div>
+    <div><b>Sumber analisis:</b> ${esc(sumber)} · <b>Dibuat:</b> ${esc(waktu)}</div></div>`;
+  const aviso = e ? '' : '<div class="warn">Analisis ini dibuat oleh AI. Periksa kebenaran klinisnya sebelum dicetak; gunakan <b>Edit / koreksi</b> bila ada yang perlu diperbaiki.</div>';
+  const bag = BAGIAN.map(([k, j]) => `<div class="sec"><h3>${j}</h3>` +
+    (e ? `<textarea id="ed_${k}" rows="7">${esc(teks(a[k]))}</textarea>` : (teks(a[k]).trim() ? `<p>${esc(teks(a[k]))}</p>` : '<p class="mut">Belum tersedia</p>')) + '</div>').join('');
+  const refArr = Array.isArray(a.referensi_literatur) ? a.referensi_literatur : teks(a.referensi_literatur).split('\n').filter(Boolean);
+  const ref = `<div class="sec"><h3>Referensi literatur</h3>` + (e
+    ? `<p class="hint">Satu referensi per baris.</p><textarea id="ed_ref" rows="5">${esc(refArr.join('\n'))}</textarea>`
+    : (refArr.length ? `<ol>${refArr.map(x => `<li>${esc(teks(x))}</li>`).join('')}</ol>` : '<p class="mut">Tidak ada.</p>')) + '</div>';
+  $('mBody').innerHTML = ringkas + aviso + bag + ref;
+  $('mFoot').innerHTML = e
+    ? `<button onclick="simpanPanel()">Simpan perubahan</button><button class="alt" onclick="editPanel(false)">Batal</button>`
+    : `<button class="alt" onclick="editPanel(true)">Edit / koreksi</button><button onclick="cetak('${r.id}')">Cetak / PDF</button><button class="alt" onclick="tutupAnalisis()">Tutup</button>`;
+}
+async function simpanPanel() {
+  const id = PANEL.id, a = { ...(cari(id).analisis || {}) };
+  BAGIAN.forEach(([k]) => { a[k] = $('ed_' + k).value.trim(); });
+  a.referensi_literatur = $('ed_ref').value.split('\n').map(x => x.trim()).filter(Boolean);
+  const { error } = await sb.from('laporan').update({ analisis: a }).eq('id', id);
+  if (error) { toast('Gagal menyimpan: ' + error.message); return; }
+  toast('Perubahan tersimpan.'); await muat(); editPanel(false);
+}
+$('modalA').addEventListener('mousedown', ev => { if (ev.target === $('modalA') && !PANEL.edit) tutupAnalisis(); });
+document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && !$('modalA').hidden && !PANEL.edit) tutupAnalisis(); });
+
 // ====== Dokumen cetak (meniru format PDF contoh) ======
 function cetak(id) {
-  const r = cari(id), a = r.analisis || {}, P = x => esc(x || 'Belum tersedia').replace(/\n/g, '<br>');
+  const r = cari(id), a = r.analisis || {}, P = x => esc(teks(x) || 'Belum tersedia').replace(/\n/g, '<br>');
   const row = (k, x) => `<tr><td class="k">${k}</td><td>: ${P(x === '' ? '-' : x)}</td></tr>`;
   const obat = r.obat.map((o, i) => (r.obat.length > 1 ? `<tr><td colspan="2"><b><i>Obat ke-${i + 1}</i></b></td></tr>` : '') +
     row('Nama Obat', o.nama + (o.industri ? ' (' + o.industri + ')' : '')) + row('No. Bets', o.batch || '-') + row('Dosis &amp; rute', o.dosis) + row('Tanggal mula penggunaan', tgl(o.mulai))).join('');
-  const refs = ['BPOM RI. Pedoman Monitoring Efek Samping Obat (MESO) bagi Tenaga Kesehatan. 2012', 'Naranjo CA, et al. Clin Pharmacol Ther. 1981;30:239-245', 'Hartwig SC, et al. Am J Hosp Pharm. 1992;49:2229-2232', ...(a.referensi_literatur || [])]
+  const refs = ['BPOM RI. Pedoman Monitoring Efek Samping Obat (MESO) bagi Tenaga Kesehatan. 2012', 'Naranjo CA, et al. Clin Pharmacol Ther. 1981;30:239-245', 'Hartwig SC, et al. Am J Hosp Pharm. 1992;49:2229-2232', ...(Array.isArray(a.referensi_literatur) ? a.referensi_literatur : teks(a.referensi_literatur).split('\n').filter(Boolean))]
     .map((x, i) => `(${i + 1}) ${esc(x)}`).join('; ');
   const w = window.open('', '_blank');
   w.document.write(`<!DOCTYPE html><html lang="id"><head><meta charset="utf-8"><title>Analisa MESO ${esc(r.nama_pasien)}</title><style>
