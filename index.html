@@ -37,6 +37,7 @@ button.alt{background:var(--tint);color:var(--acc)}button:disabled{opacity:.5}
 details{margin-top:6px}summary{cursor:pointer;color:var(--acc);font-weight:600}
 #toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#1d2433;color:#fff;padding:10px 16px;border-radius:8px;max-width:90%;z-index:9}
 .err{color:var(--err)}
+.tw{overflow-x:auto}.tb{border-collapse:collapse;width:100%;font-size:12.5px;background:#fff}.tb th,.tb td{border:1px solid var(--line);padding:4px 7px;text-align:left;vertical-align:top}.tb th{background:var(--tint);position:sticky;top:0}
 </style>
 </head>
 <body>
@@ -57,7 +58,7 @@ details{margin-top:6px}summary{cursor:pointer;color:var(--acc);font-weight:600}
 <section id="app" hidden>
 <header><b>Pelaporan MESO</b><button id="btnOut">Keluar</button></header>
 <main>
-<nav><button id="tabIn" class="on">Input laporan</button><button id="tabList">Daftar &amp; analisis</button></nav>
+<nav><button id="tabIn" class="on">Input laporan</button><button id="tabList">Daftar &amp; analisis</button><button id="tabArsip">Arsip lama</button></nav>
 
 <div id="viewIn">
   <div class="card"><h2>Data pasien</h2>
@@ -127,6 +128,13 @@ details{margin-top:6px}summary{cursor:pointer;color:var(--acc);font-weight:600}
   <p class="hint">Opsi 1: Gemini otomatis. Opsi 2: salin prompt, tempel ke claude.ai, lalu tempel hasilnya kembali. Hasil AI adalah draf: periksa sebelum dicetak dan ditandatangani, terutama bagian referensi literatur.</p>
   <div id="daftar"></div>
 </div>
+
+<div id="viewArsip" hidden>
+  <p class="hint">Rekap lama hasil migrasi dari Google Sheets (2022–2026). Hanya untuk dilihat; analisis AI hanya untuk laporan baru karena data lama tidak punya skor Naranjo.</p>
+  <div class="r2"><label>Tahun<select id="fTahun"></select></label><label>Cari<input id="fCari" placeholder="nama, obat, manifestasi, ruangan"></label></div>
+  <p id="arsipInfo" class="mut" style="margin-top:8px"></p>
+  <div id="arsipList"></div>
+</div>
 </main>
 </section>
 
@@ -134,8 +142,8 @@ details{margin-top:6px}summary{cursor:pointer;color:var(--acc);font-weight:600}
 
 <script>
 // ====== PENGATURAN (isi sebelum dipakai) ======
-const SUPABASE_URL = 'https://mcofdupvjcejburgveef.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_wp7QCDRQqPR9IMBoQ7peog_xpPjr0dH';
+const SUPABASE_URL = 'sb_publishable_wp7QCDRQqPR9IMBoQ7peog_xpPjr0dH';
+const SUPABASE_KEY = 'GANTI_DENGAN_ANON_PUBLIC_KEY';
 const KETUA_PFT = 'dr. Anton Komala, Sp. PD';
 const RUANGAN = ['Poli Rawat Jalan','Rawat Jalan','Rawat Inap','IGD','IBS','ICU','PICU','NICU','Maternitas','Punai 1','Punai 2','Punai 3','Poliklinik Urologi'];
 // =============================================
@@ -358,8 +366,34 @@ function cetak(id) {
 }
 
 // ====== Navigasi & login ======
-function tab(list) { $('viewIn').hidden = list; $('viewList').hidden = !list; $('tabIn').classList.toggle('on', !list); $('tabList').classList.toggle('on', list); if (list) muat(); }
-$('tabIn').onclick = () => tab(false); $('tabList').onclick = () => tab(true);
+let ARSIP = [];
+async function muatArsip() {
+  if (!ARSIP.length) {
+    $('arsipList').textContent = 'Memuat…';
+    for (let i = 0; ; i += 1000) {
+      const { data, error } = await sb.from('laporan_arsip').select('*').order('tahun', { ascending: false }).order('bulan', { ascending: false, nullsFirst: false }).range(i, i + 999);
+      if (error) { $('arsipList').innerHTML = `<p class="err">${esc(error.message)}</p>`; return; }
+      ARSIP.push(...data); if (data.length < 1000) break;
+    }
+    const th = [...new Set(ARSIP.map(r => r.tahun))].sort((a, b) => b - a);
+    $('fTahun').innerHTML = '<option value="">Semua tahun</option>' + th.map(t => `<option>${t}</option>`).join('');
+  }
+  tampilArsip();
+}
+function tampilArsip() {
+  const t = $('fTahun').value, q = $('fCari').value.toLowerCase();
+  const d = ARSIP.filter(r => (!t || String(r.tahun) === t) && (!q || [r.nama, r.obat, r.manifestasi, r.ruangan, r.pelapor].join(' ').toLowerCase().includes(q)));
+  $('arsipInfo').textContent = `${d.length} dari ${ARSIP.length} laporan`;
+  $('arsipList').innerHTML = d.length ? '<div class="tw"><table class="tb"><tr><th>Bulan</th><th>Nama</th><th>JK</th><th>Usia</th><th>Ruangan</th><th>Obat</th><th>Manifestasi</th><th>Tindak lanjut medis</th></tr>' +
+    d.map(r => `<tr><td>${esc(r.bulan_tahun)}</td><td>${esc(r.nama)}</td><td>${esc(r.jenis_kelamin)}</td><td>${esc(r.usia)}</td><td>${esc(r.ruangan)}</td><td>${esc(r.obat)}</td><td>${esc(r.manifestasi)}</td><td>${esc(r.tindak_lanjut_medis)}</td></tr>`).join('') + '</table></div>' : '<p class="mut">Tidak ada data yang cocok.</p>';
+}
+$('fTahun').onchange = tampilArsip; $('fCari').oninput = tampilArsip;
+function tab(n) {
+  $('viewIn').hidden = n !== 'in'; $('viewList').hidden = n !== 'list'; $('viewArsip').hidden = n !== 'arsip';
+  $('tabIn').classList.toggle('on', n === 'in'); $('tabList').classList.toggle('on', n === 'list'); $('tabArsip').classList.toggle('on', n === 'arsip');
+  if (n === 'list') muat(); if (n === 'arsip') muatArsip();
+}
+$('tabIn').onclick = () => tab('in'); $('tabList').onclick = () => tab('list'); $('tabArsip').onclick = () => tab('arsip');
 $('btnLogin').onclick = async () => {
   const { error } = await sb.auth.signInWithPassword({ email: v('em'), password: $('pw').value });
   $('loginMsg').textContent = error ? 'Gagal masuk: ' + error.message : '';
