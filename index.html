@@ -53,11 +53,13 @@ details{margin-top:6px}summary{cursor:pointer;color:var(--acc);font-weight:600}
 </head>
 <body>
 
+<section id="app">
+<header><b>Pelaporan MESO</b><button id="btnAuth">Login petugas</button></header>
 <section id="login" hidden>
-  <main style="max-width:380px;margin-top:60px">
+  <main style="max-width:380px;padding-bottom:0">
     <div class="card">
-      <h2>MESO – RSUD A.M. Parikesit</h2>
-      <p class="hint">Masuk dengan akun petugas.</p>
+      <h2>Login petugas</h2>
+      <p class="hint">Khusus petugas Farmasi untuk melihat daftar laporan dan analisis. Pelapor tidak perlu login.</p>
       <label>Email<input id="em" type="email" autocomplete="username"></label>
       <label>Kata sandi<input id="pw" type="password" autocomplete="current-password"></label>
       <p id="loginMsg" class="err"></p>
@@ -65,13 +67,14 @@ details{margin-top:6px}summary{cursor:pointer;color:var(--acc);font-weight:600}
     </div>
   </main>
 </section>
-
-<section id="app" hidden>
-<header><b>Pelaporan MESO</b><button id="btnOut">Keluar</button></header>
 <main>
-<nav><button id="tabIn" class="on">Input laporan</button><button id="tabList">Daftar &amp; analisis</button><button id="tabArsip">Arsip lama</button></nav>
+<nav id="nav" hidden><button id="tabIn" class="on">Input laporan</button><button id="tabList">Daftar &amp; analisis</button><button id="tabArsip">Arsip lama</button></nav>
 
 <div id="viewIn">
+  <div class="card"><h2>Form pelaporan efek samping obat (MESO)</h2>
+    <p class="hint" style="margin:0">RSUD A.M. Parikesit. Isi kolom bertanda *. Tuliskan inisial pasien, bukan nama lengkap.</p>
+    <input id="web" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0">
+  </div>
   <div class="card"><h2>Data pasien</h2>
     <div class="r2"><label>Nama pasien (inisial) *<input id="nama" placeholder="JR"></label>
       <label>Jenis kelamin *<select id="jk"><option>L</option><option>P</option></select></label></div>
@@ -95,6 +98,7 @@ details{margin-top:6px}summary{cursor:pointer;color:var(--acc);font-weight:600}
 
   <div class="card"><h2>Efek samping</h2>
     <label>Deskripsi efek samping *<textarea id="deskripsi"></textarea></label>
+    <label>Kronologi kejadian * <span class="mut">(urutan kejadian dari obat diberikan sampai ESO muncul dan ditangani, lengkap dengan waktunya)</span><textarea id="kronologi" rows="5" placeholder="Mis. 10.00 pasien mendapat injeksi ceftriaxone 1 g IV; 10.15 pasien mengeluh gatal dan muncul ruam; infus dihentikan, dokter jaga diberi tahu…"></textarea></label>
     <div class="r2"><label>Tanggal mulai terjadi *<input id="tglEso" type="date"></label>
       <label>Onset *<input id="onset" placeholder="15 menit setelah pemberian"></label></div>
     <label>Penanganan ESO<textarea id="penanganan"></textarea></label>
@@ -239,6 +243,7 @@ function resetForm() {
 resetForm();
 
 $('btnSimpan').onclick = async () => {
+  if (v('web')) { toast('Laporan terkirim.'); resetForm(); return; }
   const obat = [...document.querySelectorAll('.obat')].map(b => { const g = c => b.querySelector('.' + c).value.trim(); const dt = c => b.querySelector('.' + c).value || null;
     return { nama: g('nama'), industri: g('industri'), batch: g('batch'), sediaan: g('sediaan'), dosis: g('dosis'), indikasi: g('indikasi'), mulai: dt('mulai'), akhir: dt('akhir') }; });
   const nar = [...document.querySelectorAll('.nar-s')].map(s => s.value);
@@ -247,13 +252,13 @@ $('btnSimpan').onclick = async () => {
     tanggal_laporan: $('tglLap').value, nama_pasien: v('nama'), usia: v('usia'), berat_badan: v('bb'), jenis_kelamin: $('jk').value,
     suku: v('suku'), hamil_menyusui: $('hamil').value, diagnosa_utama: v('diag'), ruangan: v('ruang'),
     kondisi_penyerta: v('kondisi'), riwayat_alergi: v('alergi'), riwayat_eso: v('riwayat'),
-    obat, obat_bersamaan: v('bersamaan'), deskripsi_eso: v('deskripsi'), tanggal_mulai_eso: $('tglEso').value, onset: v('onset'),
+    obat, obat_bersamaan: v('bersamaan'), deskripsi_eso: v('deskripsi'), kronologi: v('kronologi'), tanggal_mulai_eso: $('tglEso').value, onset: v('onset'),
     penanganan: v('penanganan'), reaksi_distop: v('distop'), kesudahan: $('kesudahan').value, keseriusan: $('serius').value,
     kriteria_serius: [...document.querySelectorAll('.kr:checked')].map(c => c.value), hartwig: $('hartwig').value ? +$('hartwig').value : null,
     naranjo: nar, naranjo_skor: skor, naranjo_kategori: kat,
     dokumen_keterangan: v('dok'), pelapor: v('pelapor'), profesi_pelapor: $('profesi').value, kontak_pelapor: v('kontak')
   };
-  const wajib = row.tanggal_laporan && row.nama_pasien && row.usia && row.diagnosa_utama && row.ruangan && row.deskripsi_eso &&
+  const wajib = row.tanggal_laporan && row.nama_pasien && row.usia && row.diagnosa_utama && row.ruangan && row.deskripsi_eso && row.kronologi &&
     row.tanggal_mulai_eso && row.onset && row.kesudahan && row.pelapor && obat.every(o => o.nama && o.dosis);
   if (!wajib) { $('msg').textContent = 'Lengkapi kolom bertanda * (termasuk nama dan dosis tiap obat).'; return; }
   $('msg').textContent = ''; $('btnSimpan').disabled = true;
@@ -261,7 +266,7 @@ $('btnSimpan').onclick = async () => {
   $('btnSimpan').disabled = false;
   if (error) { $('msg').textContent = 'Gagal menyimpan: ' + error.message; return; }
   localStorage.setItem('meso_pelapor', row.pelapor); localStorage.setItem('meso_profesi', row.profesi_pelapor); localStorage.setItem('meso_kontak', row.kontak_pelapor);
-  toast('Laporan tersimpan. Buka tab “Daftar & analisis”.'); resetForm(); window.scrollTo(0, 0);
+  toast(MASUK ? 'Laporan tersimpan. Buka tab “Daftar & analisis”.' : 'Terima kasih, laporan berhasil dikirim.'); resetForm(); window.scrollTo(0, 0);
 };
 
 // ====== Prompt analisis (dipakai Opsi 1 dan Opsi 2) ======
@@ -280,6 +285,7 @@ OBAT YANG DICURIGAI:
 ${obat}
 Obat bersamaan: ${r.obat_bersamaan || 'belum tersedia'}
 Efek samping: ${r.deskripsi_eso}
+Kronologi kejadian (ditulis pelapor): ${r.kronologi || 'belum tersedia'}
 Tanggal mulai terjadi: ${tgl(r.tanggal_mulai_eso)}; onset: ${r.onset}
 Penanganan: ${r.penanganan || 'belum tersedia'}
 Reaksi setelah obat distop/diberikan kembali: ${r.reaksi_distop || 'belum tersedia'}
@@ -295,6 +301,7 @@ ATURAN:
 - Gunakan hanya data di atas. Jangan mengarang data pasien. Jika data belum ada, tulis "belum tersedia" dan sarankan melengkapinya.
 - Saat menjelaskan skor Naranjo, sebut hanya poin yang bernilai bukan 0; sebut bahwa poin lain bernilai 0 karena data belum tersedia bila ada jawaban "Tidak tahu".
 - Jangan menulis DOI atau sitasi yang tidak Anda yakini benar-benar ada. Boleh mengosongkan referensi_literatur.
+- Untuk bagian "kronologi": rapikan kronologi dari pelapor menjadi paragraf formal berurutan waktu tanpa menambah fakta baru; bila kronologi pelapor belum tersedia, susun dari data lain dan tulis bahwa rinciannya belum tersedia.
 - Rekomendasi bersifat usulan untuk PFT, bukan keputusan klinis final.
 
 FORMAT: balas HANYA JSON valid tanpa markdown:
@@ -351,7 +358,7 @@ function salinEmeso(id) {
   const r = cari(id), L = (k, x) => `${k}: ${x || '-'}`;
   const t = ['DATA PASIEN', L('Inisial', r.nama_pasien), L('Usia', r.usia), L('Jenis kelamin', r.jenis_kelamin), L('Berat badan', r.berat_badan), L('Suku', r.suku),
     L('Hamil/menyusui', r.hamil_menyusui), L('Diagnosa utama', r.diagnosa_utama), L('Kondisi penyerta', r.kondisi_penyerta), L('Riwayat alergi', r.riwayat_alergi), L('Riwayat ESO', r.riwayat_eso),
-    '', 'EFEK SAMPING', L('Manifestasi ESO', r.deskripsi_eso), L('Tanggal mulai terjadi', tgl(r.tanggal_mulai_eso)), L('Onset', r.onset), L('Penanganan ESO', r.penanganan),
+    '', 'EFEK SAMPING', L('Manifestasi ESO', r.deskripsi_eso), L('Kronologi kejadian', r.kronologi), L('Tanggal mulai terjadi', tgl(r.tanggal_mulai_eso)), L('Onset', r.onset), L('Penanganan ESO', r.penanganan),
     L('Dechallenge/rechallenge', r.reaksi_distop), L('Kesudahan', r.kesudahan), L('Keseriusan', r.keseriusan + (r.kriteria_serius.length ? ' – ' + r.kriteria_serius.join(', ') : '')),
     ...r.obat.flatMap((o, i) => ['', `OBAT DICURIGAI ${i + 1}`, L('Nama obat', o.nama), L('Produsen', o.industri), L('No. batch', o.batch), L('Bentuk sediaan', o.sediaan),
       L('Dosis & rute', o.dosis), L('Indikasi', o.indikasi), L('Tanggal mulai', tgl(o.mulai)), L('Tanggal berhenti', tgl(o.akhir))]),
@@ -424,7 +431,7 @@ function cetak(id) {
   <h1>Analisa Laporan Efek Samping Obat</h1>
   <h2>A. Identitas Pasien</h2><table>${row('Nama Pasien (singkatan)', r.nama_pasien)}${row('Usia', r.usia)}${row('Suku', r.suku || '-')}${row('Berat Badan', r.berat_badan || '-')}${row('Jenis Kelamin', r.jenis_kelamin === 'L' ? 'Pria' : 'Wanita')}${row('Hamil/Menyusui', r.hamil_menyusui)}</table>
   <h2>B. Kejadian Efek Samping Obat</h2><table>${obat}${row('Tanggal mula terjadi', tgl(r.tanggal_mulai_eso) + ' (' + r.onset + ')')}${row('Bentuk ESO yang terjadi', r.deskripsi_eso)}${row('Kesudahan ESO', r.kesudahan)}${row('Score Naranjo', r.naranjo_skor + ' (' + r.naranjo_kategori + ')')}${row('Keparahan', r.hartwig ? 'Level ' + r.hartwig + ' (Hartwig & Siegel)' : 'Belum dinilai')}${row('Keseriusan', r.keseriusan)}${row('Tindak Lanjut', r.penanganan || '-')}</table>
-  <p><b>Kronologi kejadian:</b></p><p>${P(a.kronologi)}</p>
+  <p><b>Kronologi kejadian:</b></p><p>${P(a.kronologi || r.kronologi)}</p>
   <h2>C. Analisa kejadian efek samping obat</h2><p>${P(a.analisa)}</p>
   <h2>D. Rekomendasi PFT</h2><p>${P(a.rekomendasi_pft)}</p>
   <h2>E. Kesimpulan</h2><p>${P(a.kesimpulan)}</p>
@@ -512,12 +519,20 @@ function tab(n) {
   if (n === 'list') muat(); if (n === 'arsip') muatArsip();
 }
 $('tabIn').onclick = () => tab('in'); $('tabList').onclick = () => tab('list'); $('tabArsip').onclick = () => tab('arsip');
+let MASUK = false;
 $('btnLogin').onclick = async () => {
   const { error } = await sb.auth.signInWithPassword({ email: v('em'), password: $('pw').value });
   $('loginMsg').textContent = error ? 'Gagal masuk: ' + error.message : '';
 };
-$('btnOut').onclick = () => sb.auth.signOut();
-function tampil(masuk) { $('login').hidden = masuk; $('app').hidden = !masuk; }
+$('pw').addEventListener('keydown', ev => { if (ev.key === 'Enter') $('btnLogin').click(); });
+$('btnAuth').onclick = () => { if (MASUK) sb.auth.signOut(); else $('login').hidden = !$('login').hidden; };
+function tampil(masuk) {
+  MASUK = masuk;
+  $('nav').hidden = !masuk;
+  $('btnAuth').textContent = masuk ? 'Keluar' : 'Login petugas';
+  $('login').hidden = true; $('pw').value = '';
+  if (!masuk) { REPORTS = []; ARSIP.length = 0; $('daftar').innerHTML = ''; $('arsipList').innerHTML = ''; tab('in'); }
+}
 sb.auth.getSession().then(({ data }) => tampil(!!data.session));
 sb.auth.onAuthStateChange((_e, s) => tampil(!!s));
 </script>
